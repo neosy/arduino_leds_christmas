@@ -2,13 +2,25 @@
 // Author: Neosy <neosy.dev@gmail.com>
 //
 //==================================
-// Version 2
+// Version 3
+//==================================
+// v3 (2024-01-24)
+//    1) Добавлена функция NLeds::number_get()
+//    2) Добавлена функция NLedScenarios::del(uint8_t _num)
+//    3) Добавлена функция NLedScenarios::clear()
+//    4) В структуру NLed::Dimmer добавлены переменные и методы
+//        byte level_min_def_get();
+//        void level_min_def_set(byte _level);
+//        byte level_max_def_get();
+//        void level_max_def_set(byte _level);       
+//==================================
+// v2
 //  1. Исправлены ошибки
 //  2. В сценарии добавлен режим плавного включения и выключения
 //  3. Добавлен debugMode()
 //  4. Добавлен вложенный сценарий
 //==================================
-// Version 1
+// v1
 //==================================
 
 #include "nLeds.h"
@@ -94,6 +106,22 @@ void NLed::Dimmer::disable() {
   this->level   = 0;
 }
 
+void NLed::Dimmer::level_min_def_set(byte _level) {
+  this->level_min_def = _level;
+}
+
+byte NLed::Dimmer::level_min_def_get() {
+  return this->level_min_def;
+}
+
+byte NLed::Dimmer::level_max_def_get() {
+  return this->level_max_def;
+}
+
+void NLed::Dimmer::level_max_def_set(byte _level) {
+  this->level_max_def = _level;
+}
+
 void NLed::Dimmer::level_min_set(byte _level) {
   this->level_min = _level;
 }
@@ -118,6 +146,14 @@ void NLed::Dimmer::level_set(byte _level) {
   this->level = _level;
 }
 
+NLed::Dimmer::Method NLed::Dimmer::method_get() {
+  return this->method;
+}
+
+void NLed::Dimmer::method_set(Method _method) {
+  this->method = _method;
+}
+
 // ********************************* Functions for class NLeds ****************************
 NLeds::NLeds() {
   this->first = NULL;
@@ -137,9 +173,9 @@ NLeds::~NLeds() {
   }
 }
 
-/*NLeds::NLeds(unsigned char _size) {
-  this->ledArr = new NLed*[_size];
-}*/
+uint8_t NLeds::number_get() {
+  return this->number;
+}
 
 NLed *NLeds::add(NLed *_led) {
   NLed  *ret = NULL;
@@ -528,11 +564,24 @@ void NLedScena::run_steps(NLedScena::Step *_stepStart = NULL) {
             if (step->ledFn->fn == fn_tmp) {
               t_part = (float)t_now / step->delayTime;
             }
-            fn_tmp = &NLed::off;
-            if (step->ledFn->fn == fn_tmp) {
-              t_part = 1 - (float)t_now / step->delayTime;
+            else {
+              fn_tmp = &NLed::off;
+              if (step->ledFn->fn == fn_tmp) {
+                t_part = 1 - (float)t_now / step->delayTime;
+              }
             }
-            step->ledFn->led->on((step->ledFn->led->dimmer->level_max_get() - step->ledFn->led->dimmer->level_min_get()) * t_part + step->ledFn->led->dimmer->level_min_get());
+            NLed *led = step->ledFn->led;
+            switch (led->dimmer->method_get()) {
+              case led->dimmer->Method::Line:
+                led->on((led->dimmer->level_max_get() - led->dimmer->level_min_get()) * t_part + led->dimmer->level_min_get());
+                break;
+              case led->dimmer->Method::Degree:
+                led->on((led->dimmer->level_max_get() - led->dimmer->level_min_get()) * pow(t_part, 1.7) + led->dimmer->level_min_get());
+                break;
+              case led->dimmer->Method::Exp:
+                led->on(pow((led->dimmer->level_max_get() - led->dimmer->level_min_get()), t_part) + led->dimmer->level_min_get());
+                break;
+            }
           }
         }
 
@@ -702,6 +751,19 @@ void NLedScenarios::del(const char *_name) {
       cur = cur->next;
     }
   }    
+}
+
+void NLedScenarios::del(uint8_t _num) {
+  NLedScena *scena = this->scena(_num);
+  if (scena != NULL) {
+    this->del(scena->name);
+  }
+}
+
+void NLedScenarios::clear() {
+  while (this->number_get() > 0) {
+    this->del(this->number_get() - 1);
+  }
 }
 
 NLedScena *NLedScenarios::scena(uint8_t _num) {

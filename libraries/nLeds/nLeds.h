@@ -2,7 +2,7 @@
 // Author: Neosy <neosy.dev@gmail.com>
 //
 //==================================
-// Version 2
+// Version 3
 //==================================
 
 #ifndef nLeds_h
@@ -21,7 +21,7 @@ class NLedProgress;
 class NLedScenarios;
 class NLedScena;
 
-class NLed {
+class NLed {  
   private:
     NLed      *prev, *next;
   
@@ -32,22 +32,38 @@ class NLed {
   
   public:
     struct Dimmer {
+      enum class Method 
+      { 
+          Line, //Линейная
+          Degree, //Степенная
+          Exp //Экспоненциальная
+      };
+
       private:
         boolean enabled   = false;
         byte      level   = 0;
       protected:
-        byte      level_min = 0;
-        byte      level_max = 255;
+        byte      level_min_def = 0;
+        byte      level_max_def = 255;
+        byte      level_min = level_min_def;
+        byte      level_max = level_max_def;
+        Method    method = Method::Line;
 
       public:
         void enable();
         void disable();
+        byte level_min_def_get();
+        void level_min_def_set(byte _level);
+        byte level_max_def_get();
+        void level_max_def_set(byte _level);       
         byte level_min_get();
         void level_min_set(byte _level);
         byte level_max_get();
         void level_max_set(byte _level);       
         byte level_get();
         void level_set(byte _level);
+        Method method_get();
+        void method_set(Method _method);
 
       friend class NLed;
     };
@@ -70,13 +86,12 @@ class NLed {
 class NLeds {
   private:
     uint8_t   number = 0;
-    //NLed      **ledArr;
     NLed      *first, *last;
 
   public:
     NLeds();
     ~NLeds();
-    //NLeds(unsigned char _size);
+    uint8_t number_get();
     NLed *add(NLed *_led);
     NLed *add(const char *_name, uint8_t _pin);
     NLed *led(uint8_t _num);
@@ -214,6 +229,7 @@ class NLedScenarios {
     //NLedScena *add(const char *_name, uint16_t _iterations, uint16_t _startDelay);
     void del(uint8_t _num);
     void del(const char *_name);
+    void clear();
     NLedScena *scena(uint8_t _num);
     NLedScena *scena(const char *_name);
     void loop_run();

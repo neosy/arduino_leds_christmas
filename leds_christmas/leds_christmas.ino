@@ -2,8 +2,11 @@
 // Author: Neosy <neosy.dev@gmail.com>
 //
 //==================================
-// Version 2
+// Version 3
 //==================================
+// v3 (2024-01-24)
+//    1) Оптимизация кода
+//    2) Настройка граничных значений яркости в зависимости от цвета лампочек. Проблема: зеленые и синие светодиоды обычно светят ярче
 // v2 (2024-01-23)
 //    1) Скетч по умолчанию настроен на 4 линии светодиодов (пины: D3, D5, D6 и D9)
 //    2) Добавлены 2 новых режима
@@ -33,6 +36,15 @@
 // Arduino Nano
 #define LED_LINES 4
 static const byte LED_PIN_LIST[] = {3, 5, 6, 9, 10, 11};
+static const char *LED_COLOR_LIST[] = {"B", "Y", "G", "R", "L1", "L2"}; // Blue, Yellow, Green, Red
+static const byte LED_LEVEL_MAX_LIST[] = {150, 255, 50, 255, 255, 255}; // Максимальная яркость по цветам
+static const byte LED_LEVEL_WEAK_LIST[] = {3, 3, 1, 3, 3, 3}; // Слабое свечение по цветам
+static const NLed::Dimmer::Method LED_METHOD_LIST[] = { NLed::Dimmer::Method::Degree, // Метод увеличения\уменьшения яркости
+                                                        NLed::Dimmer::Method::Degree, 
+                                                        NLed::Dimmer::Method::Exp, 
+                                                        NLed::Dimmer::Method::Degree, 
+                                                        NLed::Dimmer::Method::Degree, 
+                                                        NLed::Dimmer::Method::Degree};
 #define BTN_PIN 7
 
 #define MODE_DEF 0
@@ -57,12 +69,13 @@ void handlerButtonClicked() {
 
 // Сброс настроек светодиодов в исходное состояние. Выключение всех светодиодов
 void leds_reset() {
-  String led_name = "";
-  for (byte i=1; i<=LED_LINES; i++) {
-    led_name = "L" + String(i);
-    mLeds->led(led_name.c_str())->dimmer->level_min_set(0);
-    mLeds->led(led_name.c_str())->dimmer->level_max_set(255);
-    mLeds->led(led_name.c_str())->off();
+  NLed::Dimmer *dimmer;
+  for (byte i=0; i<mLeds->number_get(); i++) {
+    dimmer = mLeds->led(i)->dimmer;
+    dimmer->level_min_set(dimmer->level_min_def_get());
+    dimmer->level_max_set(dimmer->level_max_def_get());
+    dimmer->method_set(LED_METHOD_LIST[i]);
+    mLeds->led(i)->off();
   }
 }
 
@@ -75,14 +88,8 @@ void mode_set(byte _mode) {
 
   if (mMode != _mode) {
     String scena_name = "";
-    //if (DEBUG_ON)
-    //  Serial.println("freeMemory=" + String(freeMemory()));
     // Очистка всех сцен. Максимальное количество по числу линий светодиодов
-    for (byte i=LED_LINES; i>=1; i--) {
-      scena_name = F("S");
-      scena_name += String(i);
-      mScenas->del(scena_name.c_str());
-    }
+    mScenas->clear();
   }
   if (DEBUG_ON) {
     Serial.print(F("mode_set() - freeMemory="));
@@ -98,29 +105,30 @@ void mode_set(byte _mode) {
  
   // Все цвета постоянно горят
   if (mMode == 0) {
-    String led_name = "";
     NLedScena *scena = NULL;
     scena = mScenas->add("S1");
-    for (byte i=1; i<=LED_LINES; i++) {
-      led_name = "L" + String(i);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::on);
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      scena->add(mLeds->led(i), &NLed::on);
     }
     scena->enable();
   }
 
   // Одновременно все цвета плавно загораются и тухнут
   if (mMode == 1) {
-    const word fade_t = 3*1000;
+    const word fade_t = 5*1000;
+    const word delay = 1000;
     String scena_name = "";
-    String led_name = "";
     NLedScena *scena = NULL;
-    for (byte i=1; i<=LED_LINES; i++) {
+    NLed *led = NULL;
+
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
       scena_name = "S" + String(i);
-      led_name = "L" + String(i);
       scena = mScenas->add(scena_name.c_str());
-      scena->add(mLeds->led(led_name.c_str()), &NLed::on, fade_t);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::off, fade_t);
-      scena->addDelay(500);
+      scena->add(led, &NLed::on, fade_t);
+      //scena->addDelay(delay);
+      scena->add(led, &NLed::off, fade_t);
+      scena->addDelay(delay);
       scena->enable();
     }
   }
@@ -129,32 +137,36 @@ void mode_set(byte _mode) {
   if (mMode == 2) {
     const word fade_on_t = 6000;
     const word fade_off_t = 3000;
-    String led_name = "";
+    const word delay = 1000;
     NLedScena *scena = NULL;
-    scena = mScenas->add("S1");
-    for (byte i=1; i<=LED_LINES; i++) {
-      led_name = "L" + String(i);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::on, fade_on_t);
-      //scena->addDelay(1000);
+    NLed *led = NULL;
+
+    scena = mScenas->add("S");
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
+      scena->add(led, &NLed::on, fade_on_t);
+      //scena->addDelay(delay);
     }
-    for (byte i=1; i<=LED_LINES; i++) {
-      led_name = "L" + String(i);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::off, fade_off_t);
-      scena->addDelay(1000);
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
+      scena->add(led, &NLed::off, fade_off_t);
+      scena->addDelay(delay);
     }
     scena->enable();
   }
 
   // Последовательно каждый цвет плавно зажигается и тухнет
   if (mMode == 3) {
-    const word fade_t = 2*1000;
-    String led_name = "";
+    const word fade_on_t = 4*1000;
+    const word fade_off_t = 4*1000;
     NLedScena *scena = NULL;
+    NLed *led = NULL;
+
     scena = mScenas->add("S1");
-    for (byte i=1; i<=LED_LINES; i++) {
-      led_name = "L" + String(i);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::on, fade_t);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::off, fade_t);
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
+      scena->add(led, &NLed::on, fade_on_t);
+      scena->add(led, &NLed::off, fade_off_t);
       scena->addDelay(500);
     }
     scena->enable();
@@ -162,24 +174,25 @@ void mode_set(byte _mode) {
 
   // Четные и нечетные последовательно плавно загораются и тухнут
   if (mMode == 4) {
-    const word fade_on_t = 4*1000;
-    const word fade_off_t = 2*1000;
+    const word fade_on_t = 6*1000;
+    const word fade_off_t = 3*1000;
+    const word delay = 1000;
     String scena_name = "";
-    String led_name = "";
     NLedScena *scena = NULL;
+    NLed *led = NULL;
 
-    for (byte i=1; i<=LED_LINES; i++) {
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
       scena_name = "S" + String(i);
-      led_name = "L" + String(i);
       scena = mScenas->add(scena_name.c_str());
-      if (i % 2 == 0) {
-        scena->add(mLeds->led(led_name.c_str()), &NLed::off, fade_off_t);
-        scena->addDelay(1000);
-        scena->add(mLeds->led(led_name.c_str()), &NLed::on, fade_on_t);
+      if ((i + 1) % 2 == 0) {
+        scena->add(led, &NLed::off, fade_off_t);
+        scena->addDelay(delay);
+        scena->add(led, &NLed::on, fade_on_t);
       } else {
-        scena->add(mLeds->led(led_name.c_str()), &NLed::on, fade_on_t);
-        scena->add(mLeds->led(led_name.c_str()), &NLed::off, fade_off_t);
-        scena->addDelay(1000);
+        scena->add(led, &NLed::on, fade_on_t);
+        scena->add(led, &NLed::off, fade_off_t);
+        scena->addDelay(delay);
       }
       scena->enable();
     }
@@ -188,72 +201,78 @@ void mode_set(byte _mode) {
   // Все лампочки всегда горят с малым накалом. Последовательно каждый цвет плавно загорается и тухнет
   if (mMode == 5) {
     const word fade_on_t = 3000;
-    const word fade_off_t = 2000;
-    const byte level_min = 3;
-    String led_name = "";
+    const word fade_off_t = 3000;
     NLedScena *scena = NULL;
-    scena = mScenas->add("S1");
-    for (byte i=1; i<=LED_LINES; i++) {
-      led_name = "L" + String(i);
-      mLeds->led(led_name.c_str())->dimmer->level_min_set(level_min);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::on, fade_on_t);
-      scena->addDelay(1000);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::off, fade_off_t);
+    NLed *led = NULL;
+
+    scena = mScenas->add("S");
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
+      led->dimmer->level_min_set(LED_LEVEL_WEAK_LIST[i]);
       scena->addDelay(3000);
+      scena->add(led, &NLed::on, fade_on_t);
+      scena->addDelay(1000);
+      scena->add(led, &NLed::off, fade_off_t);
     }
     scena->enable();
   }
 
   // Все лампочки всегда горят с малым накалом. Последовательно каждый цвет 1 раз мигает
   if (mMode == 6) {
-    const word fade_t = 120;
-    const byte level_min = 3;
-    String led_name = "";
+    const word fade_t = 350;
     NLedScena *scena = NULL;
-    scena = mScenas->add("S1");
-    for (byte i=1; i<=LED_LINES; i++) {
-      led_name = "L" + String(i);
-      mLeds->led(led_name.c_str())->dimmer->level_min_set(level_min);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::on, fade_t);
+    NLed *led = NULL;
+
+    scena = mScenas->add("S");
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
+      led->dimmer->level_min_set(LED_LEVEL_WEAK_LIST[i]);
+      scena->add(led, &NLed::on, fade_t);
       scena->addDelay(20);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::off, fade_t);
+      scena->add(led, &NLed::off, fade_t);
     }
     scena->enable();
   }
 
   // Последовательно каждый цвет 1 раз мигает
   if (mMode == 7) {
-    String led_name = "";
+    const word fade_t = 50;
+    const word delay = 100;
     NLedScena *scena = NULL;
-    scena = mScenas->add("S1");
-    for (byte i=1; i<=LED_LINES; i++) {
-      led_name = "L" + String(i);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::on);
-      scena->addDelay(100);
-      scena->add(mLeds->led(led_name.c_str()), &NLed::off);
-      scena->addDelay(100);
+    scena = mScenas->add("S");
+    NLed *led = NULL;
+
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
+      scena->add(led, &NLed::on, fade_t);
+      scena->addDelay(delay);
+      scena->add(led, &NLed::off, fade_t);
+      scena->addDelay(delay);
     }
     scena->enable();
   }
 
   // Последовательно каждый цвет 4 раза мигает
   if (mMode == 8) {
-    String led_name = "";
+    const word fade_t = 70;
+    const word delay = 50;
     String scena_name = "";
     NLedScena *scena = NULL;
     NLedScena *scenaGr = NULL;
-    scena = mScenas->add("S1");
+    NLed *led = NULL;
+
+    scena = mScenas->add("S");
     scena->debugMode(DEBUG_ON);
     scena->enable();
-    for (byte i=1; i<=LED_LINES; i++) {
+    for (byte i=0; i<mLeds->number_get(); i++) {
+      led = mLeds->led(i);
       scena_name = String(scena->name_get()) + "-" + String(i);
-      led_name = "L" + String(i);
       scenaGr = scena->addScena(scena_name.c_str(), 4);
       scenaGr->debugMode(DEBUG_ON);
-      scenaGr->add(mLeds->led(led_name.c_str()), &NLed::on, 50);
-      scenaGr->addDelay(50);
-      scenaGr->add(mLeds->led(led_name.c_str()), &NLed::off, 50);
-      scenaGr->addDelay(50);
+      scenaGr->add(led, &NLed::on, fade_t);
+      scenaGr->addDelay(delay);
+      scenaGr->add(led, &NLed::off, fade_t);
+      scenaGr->addDelay(delay);
       scenaGr->enable();
     }
   }
@@ -276,6 +295,8 @@ void mode_next() {
 }
 
 void setup() {
+  NLed *led;
+
   if (DEBUG_ON)
     Serial.begin(9600);
 
@@ -292,10 +313,10 @@ void setup() {
   mLeds = new NLeds();
 
   // Инициализация светодиодов
-  for (byte i=1; i<=LED_LINES; i++) {
-    String led_name = "L" + String(i);
-    mLeds->add(led_name.c_str(), LED_PIN_LIST[i-1]);
-    mLeds->led(led_name.c_str())->dimmer->enable();
+  for (byte i=0; i<LED_LINES; i++) {
+    led = mLeds->add(LED_COLOR_LIST[i], LED_PIN_LIST[i]);
+    led->dimmer->enable();
+    led->dimmer->level_max_def_set(LED_LEVEL_MAX_LIST[i]);
   }
 
   mScenas = new NLedScenarios();
@@ -317,5 +338,5 @@ void loop() {
   mButton->loop_run();
   mScenas->loop_run();
 
-  delay(5);
+  delay(10);
 }
